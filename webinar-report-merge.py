@@ -225,12 +225,26 @@ def process_csv_fixed(regrep_file, attrep_file):
     merged_report['Scheduled Time'] = scheduled_time
     merged_report['Duration'] = duration
 
-    # Ensure all required columns are present and filled
+    # After merging and processing the data, but before writing to CSV:
+
+    # 1. Remove the "Approval Status" column
+    merged_report = merged_report.drop(columns=['Approval Status'], errors='ignore')
+
+    # 2. Replace Null values in "Attended" column with FALSE
+    merged_report['Attended'] = merged_report['Attended'].fillna(False)
+
+    # 3. Replace Null values in "Source Name" column with "Unknown"
+    merged_report['Source Name'] = merged_report['Source Name'].fillna("Unknown")
+    merged_report['Source Name'] = merged_report['Source Name'].replace('', "Unknown")
+
+    # Update the required columns list
     required_columns = [
-        'Email', 'First Name', 'Last Name', 'Organization', 'Registration Time', 'Approval Status', 'Source Name',
+        'Email', 'First Name', 'Last Name', 'Organization', 'Registration Time', 'Source Name',
         'Attended', 'User Name (Original Name)', 'Join Time', 'Leave Time', 'Time in Session', 'Is Guest',
         'Country/Region Name', 'Event Name', 'Scheduled Time', 'Duration'
     ]
+
+    # Ensure all required columns are present and filled
     for col in required_columns:
         if col not in merged_report.columns:
             merged_report[col] = ''
