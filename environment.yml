@@ -1,0 +1,14 @@
+name: webinar-report-merge
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.8
+  - pandas
+  - numpy
+  - openpyxl
+  - xlrd
+  - pip
+  - pip:
+    - argparse
+    - logging

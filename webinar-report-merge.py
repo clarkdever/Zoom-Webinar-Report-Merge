@@ -3,6 +3,7 @@ import re
 import argparse
 import logging
 import csv
+from datetime import datetime
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,9 +41,14 @@ logger = logging.getLogger(__name__)
 # wrapped in quotes before writing to CSV.
 #
 # How to Run:
-# 1. Install dependencies (e.g., pandas).
-# 2. Execute the script with the following command:
-#    python combine_reports.py regrep.csv attrep.csv
+# 1. Ensure you have Anaconda or Miniconda installed.
+# 2. Create and activate the Conda environment using the provided environment.yml file:
+#    conda env create -f environment.yml
+#    conda activate webinar-report-merge
+# 3. Once the environment is activated, execute the script with the following command:
+#    python webinar-report-merge.py regrep.csv attrep.csv
+# 
+# Note: Make sure you're in the correct directory containing the script and CSV files.
 # ------------------------------------------------------
 # ------------------------------------------------------
 
@@ -88,6 +94,35 @@ def extract_event_details(file_path, header_row):
     event_name = lines[header_row - 2].split(',')[0].strip()
     scheduled_time = lines[header_row - 2].split(',')[2].strip()
     return event_name, scheduled_time
+
+def convert_to_athena_date_format(date_string):
+    """
+    Convert various date string formats to Athena DB's preferred format (YYYY-MM-DD HH:MM:SS).
+    This function is crucial for preparing the data for ingestion into Superset via Athena.
+    It handles multiple input formats and ensures consistency in the output, making it easier
+    to query and visualize the data in Superset.
+
+    Args:
+    date_string (str): The input date string to be converted.
+
+    Returns:
+    str: The date in YYYY-MM-DD HH:MM:SS format if successfully converted, otherwise the original string.
+    """
+    if pd.isna(date_string) or date_string == '--':
+        return ''
+    try:
+        # Try parsing with various formats
+        for fmt in ('%m/%d/%Y %I:%M:%S %p', '%b %d, %Y %I:%M %p', '%Y-%m-%d %H:%M:%S'):
+            try:
+                dt = datetime.strptime(date_string, fmt)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                continue
+        # If no format matches, return the original string
+        return date_string
+    except Exception as e:
+        logger.warning(f"Error converting date '{date_string}': {str(e)}")
+        return date_string
 
 # Main function that processes both CSV files and merges them, adding fixed patches for formatting and parsing
 def process_csv_fixed(regrep_file, attrep_file):
@@ -256,9 +291,22 @@ def process_csv_fixed(regrep_file, attrep_file):
     # Reorder columns to match the desired output
     merged_report = merged_report[required_columns]
 
+    # Remove spaces and convert column headers to camel case
+    def to_camel_case(column_name):
+        words = column_name.split()
+        return words[0].lower() + ''.join(word.capitalize() for word in words[1:])
+
+    merged_report.columns = [to_camel_case(col) for col in merged_report.columns]
+
     # Debug: Show merged report information
     logger.debug(f"Merged report columns: {merged_report.columns.tolist()}")
     logger.debug(f"First few rows of merged report:\n{merged_report.head()}")
+
+    # Convert date columns to Athena DB format for easier ingestion into Superset
+    date_columns = ['registrationTime', 'scheduledTime', 'joinTime', 'leaveTime']
+    for col in date_columns:
+        if col in merged_report.columns:
+            merged_report[col] = merged_report[col].apply(convert_to_athena_date_format)
 
     # Generate output file name
     output_file = f"{event_name}.csv"
