@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+import os
 import argparse
 import logging
 import csv
@@ -311,6 +312,13 @@ def process_csv_fixed(regrep_file, attrep_file):
     # Generate output file name
     output_file = f"{event_name}.csv"
 
+    # Create the output directory if it doesn't exist
+    output_dir = './output'
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Generate output filename
+    output_file = os.path.join(output_dir, output_file)
+
     # Save the merged report
     merged_report.to_csv(output_file, index=False)
     logger.info(f"Merged report saved to {output_file}")
@@ -328,6 +336,5 @@ if __name__ == "__main__":
     # Debug information
     logging.info(f"regrep_file: {args.regrep_file}")
     logging.info(f"attrep_file: {args.attrep_file}")
-
     output_file = process_csv_fixed(args.regrep_file, args.attrep_file)
     print(f"Merged report saved as: {output_file}")
