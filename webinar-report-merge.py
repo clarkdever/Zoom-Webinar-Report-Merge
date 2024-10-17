@@ -338,10 +338,10 @@ def process_csv_fixed(regrep_file, attrep_file):
     # 6. Replace 'nan' with blank in User Name
     merged_report['User Name'] = merged_report['User Name'].replace('nan', '')
 
-    # Update the required columns list
+    # Update the required columns list (remove 'Is Guest')
     required_columns = [
         'Email', 'First Name', 'Last Name', 'Organization', 'Registration Time', 'Source Name',
-        'Attended', 'User Name', 'Join Time', 'Leave Time', 'Time in Session', 'Is Guest',
+        'Attended', 'User Name', 'Join Time', 'Leave Time', 'Time in Session',
         'Country/Region Name', 'Event Name', 'Scheduled Time', 'Duration'
     ]
 
