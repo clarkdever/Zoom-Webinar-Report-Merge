@@ -178,6 +178,37 @@ def convert_time_in_session(value):
     logger.warning(f"Unable to convert timeInSession value to minutes: {value}")
     return 0
 
+def normalize_source_name(name):
+    """
+    Normalize the source name by applying title case, making it singular,
+    and applying other standard normalization techniques.
+    """
+    if pd.isna(name) or name == '':
+        return "Unknown"
+
+    # Convert to title case
+    name = name.title()
+
+    # Remove trailing 's' or 'es'
+    name = re.sub(r'(s|es)$', '', name)
+
+    # Additional normalization techniques
+    name = name.replace('&', 'And')
+    name = name.replace('-', ' ')
+    name = re.sub(r'\s+', ' ', name)  # Replace multiple spaces with a single space
+    name = name.strip()
+
+    # Handle common abbreviations
+    abbreviations = {
+        'Linkedin': 'LinkedIn',
+        'Fb': 'Facebook',
+        'Ig': 'Instagram',
+    }
+    for abbr, full in abbreviations.items():
+        name = name.replace(abbr, full)
+
+    return name
+
 # Main function that processes both CSV files and merges them, adding fixed patches for formatting and parsing
 def process_csv_fixed(regrep_file, attrep_file):
     logging.info(f"Processing files: regrep={regrep_file}, attrep={attrep_file}")
