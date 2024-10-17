@@ -5,6 +5,7 @@ import argparse
 import logging
 import csv
 from datetime import datetime
+import numpy as np
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -99,31 +100,38 @@ def extract_event_details(file_path, header_row):
 def convert_to_athena_date_format(date_string):
     """
     Convert various date string formats to Athena DB's preferred format (YYYY-MM-DD HH:MM:SS).
-    This function is crucial for preparing the data for ingestion into Superset via Athena.
-    It handles multiple input formats and ensures consistency in the output, making it easier
-    to query and visualize the data in Superset.
+    This function handles multiple input formats and ensures consistency in the output.
 
     Args:
     date_string (str): The input date string to be converted.
 
     Returns:
-    str: The date in YYYY-MM-DD HH:MM:SS format if successfully converted, otherwise the original string.
+    str: The date in YYYY-MM-DD HH:MM:SS format if successfully converted, otherwise an empty string.
     """
     if pd.isna(date_string) or date_string == '--':
+        logger.debug(f"Empty or invalid date string: '{date_string}'")
         return ''
-    try:
-        # Try parsing with various formats
-        for fmt in ('%m/%d/%Y %I:%M:%S %p', '%b %d, %Y %I:%M %p', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y %I:%M %p'):
-            try:
-                dt = datetime.strptime(date_string, fmt)
-                return dt.strftime('%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                continue
-        # If no format matches, return the original string
-        return date_string
-    except Exception as e:
-        logger.warning(f"Error converting date '{date_string}': {str(e)}")
-        return date_string
+    
+    formats = [
+        '%m/%d/%Y %I:%M:%S %p',
+        '%b %d, %Y %I:%M %p',
+        '%Y-%m-%d %H:%M:%S',
+        '%m/%d/%Y %I:%M %p',
+        '%Y-%m-%d %I:%M:%S %p',
+        '%b %d, %Y %H:%M:%S',  # New format for joinTime and leaveTime
+    ]
+    
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(date_string, fmt)
+            result = dt.strftime('%Y-%m-%d %H:%M:%S')
+            logger.debug(f"Successfully converted '{date_string}' to '{result}' using format '{fmt}'")
+            return result
+        except ValueError:
+            continue
+    
+    logger.warning(f"Failed to convert date string: '{date_string}'. Tried formats: {formats}")
+    return ''
 
 def convert_is_guest(value):
     """
@@ -138,6 +146,37 @@ def convert_is_guest(value):
     if pd.isna(value) or value in ['--', '']:
         return False
     return value.strip().lower() == 'yes'
+
+def convert_time_in_session(value):
+    """
+    Convert timeInSession to minutes if it's a valid number, otherwise return 0.
+    
+    Args:
+    value: The input value from the 'timeInSession' column.
+
+    Returns:
+    int: The time in session in minutes, or 0 if invalid.
+    """
+    if pd.isna(value) or value == '' or value == '--':
+        return 0
+    try:
+        # If the value is already in minutes, just return it as an integer
+        return int(float(value))
+    except ValueError:
+        # If it's not a simple number, it might be in HH:MM:SS format
+        try:
+            parts = value.split(':')
+            if len(parts) == 3:
+                hours, minutes, seconds = map(int, parts)
+                return hours * 60 + minutes + (1 if seconds > 0 else 0)
+            elif len(parts) == 2:
+                minutes, seconds = map(int, parts)
+                return minutes + (1 if seconds > 0 else 0)
+        except:
+            pass
+    
+    logger.warning(f"Unable to convert timeInSession value to minutes: {value}")
+    return 0
 
 # Main function that processes both CSV files and merges them, adding fixed patches for formatting and parsing
 def process_csv_fixed(regrep_file, attrep_file):
@@ -250,16 +289,19 @@ def process_csv_fixed(regrep_file, attrep_file):
                 combined[col] = group[col].dropna().iloc[0] if not group[col].dropna().empty else combined[col]
         
         # Calculate Time in Session
-        if combined['Join Time'] != '--' and combined['Leave Time'] != '--':
-            try:
-                join_time = pd.to_datetime(combined['Join Time'])
-                leave_time = pd.to_datetime(combined['Leave Time'])
-                time_in_session = (leave_time - join_time).total_seconds() / 60
-                combined['Time in Session'] = f"{time_in_session:.0f}"
-            except:
-                combined['Time in Session'] = ''
+        if 'Join Time' in combined and 'Leave Time' in combined:
+            if combined['Join Time'] != '--' and combined['Leave Time'] != '--':
+                try:
+                    join_time = pd.to_datetime(combined['Join Time'])
+                    leave_time = pd.to_datetime(combined['Leave Time'])
+                    time_in_session = (leave_time - join_time).total_seconds() / 60
+                    combined['Time in Session'] = f"{time_in_session:.0f}"
+                except:
+                    combined['Time in Session'] = '0'
+            else:
+                combined['Time in Session'] = '0'
         else:
-            combined['Time in Session'] = ''
+            combined['Time in Session'] = '0'
         
         return combined
 
@@ -287,10 +329,19 @@ def process_csv_fixed(regrep_file, attrep_file):
     merged_report['Source Name'] = merged_report['Source Name'].fillna("Unknown")
     merged_report['Source Name'] = merged_report['Source Name'].replace('', "Unknown")
 
+    # 4. Replace 'nan' with blank in country/regionName
+    merged_report['Country/Region Name'] = merged_report['Country/Region Name'].replace('nan', '')
+
+    # 5. Rename 'User Name (Original Name)' to 'User Name'
+    merged_report = merged_report.rename(columns={'User Name (Original Name)': 'User Name'})
+
+    # 6. Replace 'nan' with blank in User Name
+    merged_report['User Name'] = merged_report['User Name'].replace('nan', '')
+
     # Update the required columns list
     required_columns = [
         'Email', 'First Name', 'Last Name', 'Organization', 'Registration Time', 'Source Name',
-        'Attended', 'User Name (Original Name)', 'Join Time', 'Leave Time', 'Time in Session', 'Is Guest',
+        'Attended', 'User Name', 'Join Time', 'Leave Time', 'Time in Session', 'Is Guest',
         'Country/Region Name', 'Event Name', 'Scheduled Time', 'Duration'
     ]
 
@@ -298,10 +349,8 @@ def process_csv_fixed(regrep_file, attrep_file):
     for col in required_columns:
         if col not in merged_report.columns:
             merged_report[col] = ''
-        elif col == 'Country/Region Name' and 'Country/Region Name' not in merged_report.columns:
-            merged_report[col] = merged_report['Country/Region'].fillna('')
-        elif merged_report[col].isna().all():
-            merged_report[col] = ''
+        elif col in ['Country/Region Name', 'User Name'] and merged_report[col].isna().any():
+            merged_report[col] = merged_report[col].fillna('')
 
     # Reorder columns to match the desired output
     merged_report = merged_report[required_columns]
@@ -321,11 +370,28 @@ def process_csv_fixed(regrep_file, attrep_file):
     date_columns = ['registrationTime', 'scheduledTime', 'joinTime', 'leaveTime']
     for col in date_columns:
         if col in merged_report.columns:
+            logger.info(f"Converting dates in column: {col}")
             merged_report[col] = merged_report[col].apply(convert_to_athena_date_format)
+            logger.info(f"Finished converting dates in column: {col}")
 
     # Convert 'isGuest' column
     if 'isGuest' in merged_report.columns:
         merged_report['isGuest'] = merged_report['isGuest'].apply(convert_is_guest)
+
+    # Convert timeInSession column
+    if 'timeInSession' in merged_report.columns:
+        logger.info("Converting timeInSession column")
+        merged_report['timeInSession'] = merged_report['timeInSession'].apply(convert_time_in_session)
+        merged_report['timeInSession'] = merged_report['timeInSession'].astype(int)  # Ensure integer type
+        logger.info("Finished converting timeInSession column")
+
+    # After processing all columns, log a sample of the data
+    logger.debug("Sample of processed data:")
+    logger.debug(merged_report[date_columns + ['timeInSession']].head().to_string())
+
+    # Ensure all columns are string type before writing to CSV
+    for column in merged_report.columns:
+        merged_report[column] = merged_report[column].astype(str)
 
     # Generate output file name
     output_file = f"{event_name}.csv"
