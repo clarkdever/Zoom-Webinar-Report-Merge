@@ -198,15 +198,6 @@ def normalize_source_name(name):
     name = re.sub(r'\s+', ' ', name)  # Replace multiple spaces with a single space
     name = name.strip()
 
-    # Handle common abbreviations
-    abbreviations = {
-        'Linkedin': 'LinkedIn',
-        'Fb': 'Facebook',
-        'Ig': 'Instagram',
-    }
-    for abbr, full in abbreviations.items():
-        name = name.replace(abbr, full)
-
     return name
 
 # Main function that processes both CSV files and merges them, adding fixed patches for formatting and parsing
@@ -356,9 +347,17 @@ def process_csv_fixed(regrep_file, attrep_file):
     # 2. Replace Null values in "Attended" column with FALSE
     merged_report['Attended'] = merged_report['Attended'].fillna(False)
 
-    # 3. Replace Null values in "Source Name" column with "Unknown"
+    # 3. Replace Null values in "Source Name" column with "Unknown" anndd normalize the values
     merged_report['Source Name'] = merged_report['Source Name'].fillna("Unknown")
     merged_report['Source Name'] = merged_report['Source Name'].replace('', "Unknown")
+
+    logger.info("Starting to normalize Source Name column")
+    logger.debug(f"Unique Source Name values before normalization: {merged_report['Source Name'].unique()}")
+
+    merged_report['Source Name'] = merged_report['Source Name'].apply(normalize_source_name)
+   
+    logger.debug(f"Unique Source Name values after normalization: {merged_report['Source Name'].unique()}")
+    logger.info("Finished normalizing Source Name column")
 
     # 4. Replace 'nan' with blank in country/regionName
     merged_report['Country/Region Name'] = merged_report['Country/Region Name'].replace('nan', '')
