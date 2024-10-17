@@ -113,7 +113,7 @@ def convert_to_athena_date_format(date_string):
         return ''
     try:
         # Try parsing with various formats
-        for fmt in ('%m/%d/%Y %I:%M:%S %p', '%b %d, %Y %I:%M %p', '%Y-%m-%d %H:%M:%S'):
+        for fmt in ('%m/%d/%Y %I:%M:%S %p', '%b %d, %Y %I:%M %p', '%Y-%m-%d %H:%M:%S', '%m/%d/%Y %I:%M %p'):
             try:
                 dt = datetime.strptime(date_string, fmt)
                 return dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -124,6 +124,20 @@ def convert_to_athena_date_format(date_string):
     except Exception as e:
         logger.warning(f"Error converting date '{date_string}': {str(e)}")
         return date_string
+
+def convert_is_guest(value):
+    """
+    Convert 'Is Guest' values to boolean TRUE or FALSE.
+    
+    Args:
+    value (str): The input value from the 'Is Guest' column.
+
+    Returns:
+    bool: TRUE if the value is 'Yes', FALSE otherwise.
+    """
+    if pd.isna(value) or value in ['--', '']:
+        return False
+    return value.strip().lower() == 'yes'
 
 # Main function that processes both CSV files and merges them, adding fixed patches for formatting and parsing
 def process_csv_fixed(regrep_file, attrep_file):
@@ -308,6 +322,10 @@ def process_csv_fixed(regrep_file, attrep_file):
     for col in date_columns:
         if col in merged_report.columns:
             merged_report[col] = merged_report[col].apply(convert_to_athena_date_format)
+
+    # Convert 'isGuest' column
+    if 'isGuest' in merged_report.columns:
+        merged_report['isGuest'] = merged_report['isGuest'].apply(convert_is_guest)
 
     # Generate output file name
     output_file = f"{event_name}.csv"
